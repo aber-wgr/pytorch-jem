@@ -50,7 +50,7 @@ def train(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoc
     model_obj.train() # モデルを学習モードに変更
 
     # ミニバッチごとに学習
-    running_loss = 0
+    running_loss,running_elf_loss,running_gen_loss = 0
     step = 0
     for data, targets in loader_train:
         if step % 100 == 0:
@@ -76,12 +76,16 @@ def train(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoc
             exit(1)
             
         running_loss += loss.item()
+        running_elf_loss += loss_elf
+        running_gen_loss += loss_gen
         with torch.autograd.detect_anomaly(): 
             loss.backward()
         optimizer.step() # 重みを更新する
 
     train_loss = running_loss / len(loader_train)
-    print ('Epoch [%d/%d], Loss: %.4f' % (epoch, total_epoch, train_loss))
+    train_gen_loss = running_gen_loss / len(loader_train)
+    train_elf_loss = running_elf_loss / len(loader_train)
+    print ('Train Epoch [%d/%d], ELF loss %.4f, GEN loss %.4f, Total Loss: %.4f' % (epoch, total_epoch, train_elf_loss, train_gen_loss, train_loss))
  
  
 # テスト用関数
@@ -109,7 +113,7 @@ def test(loader_test, trained_model, loss_fn, device):
     # 正解率を計算
     data_num = len(loader_test.dataset) # テストデータの総数
     val_loss = running_loss / len(loader_test)
-    print('\nAccuracy: {}/{} ({:.1f}%) loss: {:.4f}\n'.format(correct, data_num, 100. * correct / data_num, val_loss))
+    print('\nTest Accuracy: {}/{} ({:.1f}%) loss: {:.4f}\n'.format(correct, data_num, 100. * correct / data_num, val_loss))
  
  
 def main():
