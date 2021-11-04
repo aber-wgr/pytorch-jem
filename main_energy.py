@@ -139,8 +139,8 @@ def main():
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=1/7, random_state=0)
  
     # 5-2. データのフォーマットを変換：PyTorchでの形式 = [画像数，チャネル数，高さ，幅]
-    x_train = x_train.reshape(60000, 28 * 28)
-    x_test = x_test.reshape(10000, 28 *28)
+    x_train = x_train.values.reshape(60000, 28 * 28)
+    x_test = x_test.values.reshape(10000, 28 *28)
 
     from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -157,8 +157,8 @@ def main():
     x_train = torch.Tensor(x_train)
 #    x_train.requires_grad_()
     x_test = torch.Tensor(x_test)
-    y_train = torch.LongTensor(y_train)
-    y_test = torch.LongTensor(y_test)
+    y_train = torch.LongTensor(y_train.to_numpy(dtype=np.float64))
+    y_test = torch.LongTensor(y_test.to_numpy(dtype=np.float64))
  
     # 5-4. 入力（x）とラベル（y）を組み合わせて最終的なデータを作成
     ds_train = TensorDataset(x_train, y_train)
