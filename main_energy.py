@@ -226,9 +226,10 @@ def main():
     loader_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False)
  
     # 6. モデル作成
-#    model = net.CNN(num_classes=num_classes).to(device)
-    vanilla_model = net.Net(1000,10).to(device)
-    energy_model = net.Net(1000,10).to(device)
+    vanilla_model = net.CNN(num_classes=num_classes,sample_size=768).to(device)
+    energy_model = net.CNN(num_classes=num_classes,sample_size=768).to(device)
+    #vanilla_model = net.Net(1000,10).to(device)
+    #energy_model = net.Net(1000,10).to(device)
     #print(model) # ネットワークの詳細を確認用に表示
  
     # 7. 損失関数を定義

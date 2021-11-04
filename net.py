@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 def jacobian(f, x):
     """Computes the Jacobian of f w.r.t x.
@@ -48,7 +49,7 @@ class Net(nn.Module):
 
 class CNN(nn.Module):
  
-    def __init__(self, num_classes):
+    def __init__(self, num_classes,sample_size):
         """
         Convolutional Neural Network
         
@@ -61,6 +62,8 @@ class CNN(nn.Module):
         """
  
         super(CNN, self).__init__() # nn.Moduleを継承する
+
+        side = int(math.sqrt(sample_size))
  
         self.block1 = nn.Sequential(
             nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
@@ -79,7 +82,7 @@ class CNN(nn.Module):
             nn.BatchNorm2d(32)
         )
         self.full_connection = nn.Sequential(
-            nn.Linear(in_features=32*26*26, out_features=512), # in_featuresは直前の出力ユニット数
+            nn.Linear(in_features=32*side*side, out_features=512), # in_featuresは直前の出力ユニット数
             nn.ReLU(),
             nn.Dropout(),
             nn.Linear(in_features=512, out_features=num_classes)
@@ -90,12 +93,16 @@ class CNN(nn.Module):
     # 参考：Define by Runの特徴（入力に合わせてForward計算を変更可）
     def forward(self, x):
  
+        # reshape from (N,features) to (N,C,H,W)
+        side = int(math.sqrt(x.size(1)))
+        x = x.reshape(x.size(0),1,side,side)
+
         x = self.block1(x)
         x = self.block2(x)
  
         # 直前のMaxPoolの出力が2次元（×チャネル数）なので，全結合の入力形式に変換
         # 参考：KerasのFlatten()と同じような処理
-        x = x.view(x.size(0), 32 * 26 * 26)
+        x = x.view(x.size(0), 32 * side * side)
  
         y = self.full_connection(x)
         
