@@ -43,14 +43,67 @@ def Sample(f, batch_size, dim, device):
     B.add(x.cpu())
     return x
 
+def train_vanilla(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoch):
+    
+    model_obj.train() # モデルを学習モードに変更
+ 
+    # ミニバッチごとに学習
+    running_loss = 0
+    for data, targets in loader_train:
+ 
+        data = data.to(device) # GPUを使用するため，to()で明示的に指定
+        targets = targets.to(device) # 同上
+ 
+        optimizer.zero_grad() # 勾配を初期化
+        outputs = model_obj(data) # 順伝播の計算
+        loss = loss_fn(outputs, targets) # 誤差を計算
+        running_loss += loss.item()
+ 
+        loss.backward() # 誤差を逆伝播させる
+        optimizer.step() # 重みを更新する
+    
+    train_loss = running_loss / len(loader_train)
+
+    print ('Train Loss: %.4f' % (train_loss))
+ 
+ 
+# テスト用関数
+def test_vanilla(loader_test, trained_model, loss_fn, device):
+ 
+    trained_model.eval() # モデルを推論モードに変更
+    correct = 0 # 正解率計算用の変数を宣言
+    running_loss = 0 
+    # ミニバッチごとに推論
+    with torch.no_grad(): # 推論時には勾配は不要
+        for data, targets in loader_test:
+ 
+            data = data.to(device) #  GPUを使用するため，to()で明示的に指定
+            targets = targets.to(device) # 同上
+ 
+            outputs = trained_model(data) # 順伝播の計算
+ 
+            # 推論結果の取得と正誤判定
+            _, predicted = torch.max(outputs.data, 1) # 確率が最大のラベルを取得
+            correct += predicted.eq(targets.data.view_as(predicted)).sum() # 正解ならば正解数をカウントアップ
+
+            loss = loss_fn(outputs, targets)
+            running_loss += loss.item()
+    
+    # 正解率を計算
+    data_num = len(loader_test.dataset) # テストデータの総数
+    val_loss = running_loss / len(loader_test)
+    print('\nTest Accuracy: {}/{} ({:.1f}%) loss: {:.4f}\n'.format(correct, data_num, 100. * correct / data_num, val_loss))
+
 
 # 学習用関数
-def train(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoch):
+def train_energy(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoch):
     
     model_obj.train() # モデルを学習モードに変更
 
     # ミニバッチごとに学習
-    running_loss,running_elf_loss,running_gen_loss = 0
+    running_loss = 0
+    running_elf_loss = 0
+    running_gen_loss = 0
     step = 0
     for data, targets in loader_train:
         if step % 100 == 0:
@@ -85,11 +138,11 @@ def train(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoc
     train_loss = running_loss / len(loader_train)
     train_gen_loss = running_gen_loss / len(loader_train)
     train_elf_loss = running_elf_loss / len(loader_train)
-    print ('Train Epoch [%d/%d], ELF loss %.4f, GEN loss %.4f, Total Loss: %.4f' % (epoch, total_epoch, train_elf_loss, train_gen_loss, train_loss))
+    print ('Train ELF loss %.4f, GEN loss %.4f, Total Loss: %.4f' % (train_elf_loss, train_gen_loss, train_loss))
  
  
 # テスト用関数
-def test(loader_test, trained_model, loss_fn, device):
+def test_energy(loader_test, trained_model, loss_fn, device):
  
     trained_model.eval() # モデルを推論モードに変更
     correct = 0 # 正解率計算用の変数を宣言
@@ -174,21 +227,28 @@ def main():
  
     # 6. モデル作成
 #    model = net.CNN(num_classes=num_classes).to(device)
-    model = net.Net(1000,10).to(device)
-    print(model) # ネットワークの詳細を確認用に表示
+    vanilla_model = net.Net(1000,10).to(device)
+    energy_model = net.Net(1000,10).to(device)
+    #print(model) # ネットワークの詳細を確認用に表示
  
     # 7. 損失関数を定義
     loss_fn = nn.CrossEntropyLoss()
  
     # 8. 最適化手法を定義（ここでは例としてAdamを選択）
     from torch import optim
-    optimizer = optim.Adam(model.parameters())
+    vanilla_optimizer = optim.Adam(vanilla_model.parameters())
+    energy_optimizer = optim.Adam(energy_model.parameters())
 
     # 9. 学習（エポック終了時点ごとにテスト用データで評価）
     print('Begin train')
     for epoch in range(1, epochs+1):
-        train(loader_train, model, optimizer, loss_fn, device, epochs, epoch)
-        test(loader_test, model, loss_fn, device)
+        print('Epoch [%d/%d]' % (epoch,epochs))
+        print("--Vanilla Model--")
+        train_vanilla(loader_train, vanilla_model, vanilla_optimizer, loss_fn, device, epochs, epoch)
+        test_vanilla(loader_test, vanilla_model, loss_fn, device)
+        print("--Energy Model--")
+        train_energy(loader_train, energy_model, energy_optimizer, loss_fn, device, epochs, epoch)
+        test_energy(loader_test, energy_model, loss_fn, device)
  
  
 if __name__ == '__main__':
