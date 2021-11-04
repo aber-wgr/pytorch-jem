@@ -5,3 +5,4 @@
 *.sqlite
 /.vs/ProjectSettings.json
 *.pyc
+*.sqlite-journal
