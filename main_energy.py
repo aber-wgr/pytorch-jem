@@ -129,8 +129,8 @@ def train_energy(loader_train, model_obj, optimizer, loss_fn, device, total_epoc
             exit(1)
             
         running_loss += loss.item()
-        running_elf_loss += loss_elf
-        running_gen_loss += loss_gen
+        running_elf_loss += loss_elf.item()
+        running_gen_loss += loss_gen.item()
         with torch.autograd.detect_anomaly(): 
             loss.backward()
         optimizer.step() # 重みを更新する
