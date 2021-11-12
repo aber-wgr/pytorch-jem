@@ -50,18 +50,18 @@ class ReplayBuffer(object):
     pass
 
 
-import torch
+#import torch
 
-rb = ReplayBuffer(3)
-print(rb.buffer)
+#rb = ReplayBuffer(3)
+#print(rb.buffer)
 
-episodes = torch.tensor([[0,1,2],[3,4,5]])
-rb.add(episodes)
-episodes = torch.tensor([[3,4,5],[6,7,8]])
-rb.add(episodes)
-episodes = torch.tensor([[6,7,8],[9,10,11]])
-rb.add(episodes)
-print(rb.buffer)
+#episodes = torch.tensor([[0,1,2],[3,4,5]])
+#rb.add(episodes)
+#episodes = torch.tensor([[3,4,5],[6,7,8]])
+#rb.add(episodes)
+#episodes = torch.tensor([[6,7,8],[9,10,11]])
+#rb.add(episodes)
+#print(rb.buffer)
 
-print(rb.get_batch(2))
-print(torch.stack(rb.get_batch(2)))
+#print(rb.get_batch(2))
+#print(torch.stack(rb.get_batch(2)))

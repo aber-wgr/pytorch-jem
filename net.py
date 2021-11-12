@@ -21,7 +21,8 @@ def jacobian(f, x):
     :return: Jacobian matrix (torch.tensor) of shape [B, N]
     """
 
-    B, N = x.shape
+    #B, N = x.shape
+    #print("jacobian:size:" + str(x.size()))
     y = f(x)
     v = torch.zeros_like(y)
     v[:, 0] = 1.
@@ -49,7 +50,7 @@ class Net(nn.Module):
 
 class CNN(nn.Module):
  
-    def __init__(self, num_classes,sample_size):
+    def __init__(self, num_classes,c,h,w):
         """
         Convolutional Neural Network
         
@@ -62,17 +63,17 @@ class CNN(nn.Module):
         """
  
         super(CNN, self).__init__() # nn.Moduleを継承する
-
-        side = int(math.sqrt(sample_size))
  
         self.block1 = nn.Sequential(
-            nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels=c, out_channels=16, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=1), # 出力サイズ: チャネル=16, 高さ=27, 幅=27
             nn.BatchNorm2d(16)
         )
+        h = h-1
+        w = w-1
         self.block2 = nn.Sequential(
             nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
@@ -81,8 +82,10 @@ class CNN(nn.Module):
             nn.MaxPool2d(kernel_size=2, stride=1), # 出力サイズ: チャネル=32, 高さ=26, 幅=26
             nn.BatchNorm2d(32)
         )
+        h = h-1
+        w = w-1
         self.full_connection = nn.Sequential(
-            nn.Linear(in_features=32*side*side, out_features=512), # in_featuresは直前の出力ユニット数
+            nn.Linear(in_features=32*c*h*w, out_features=512), # in_featuresは直前の出力ユニット数
             nn.ReLU(),
             nn.Dropout(),
             nn.Linear(in_features=512, out_features=num_classes)
@@ -92,17 +95,13 @@ class CNN(nn.Module):
     # Forward計算の定義
     # 参考：Define by Runの特徴（入力に合わせてForward計算を変更可）
     def forward(self, x):
- 
-        # reshape from (N,features) to (N,C,H,W)
-        side = int(math.sqrt(x.size(1)))
-        x = x.reshape(x.size(0),1,side,side)
-
+        #print("forward size:" + str(x.size()))
         x = self.block1(x)
         x = self.block2(x)
  
         # 直前のMaxPoolの出力が2次元（×チャネル数）なので，全結合の入力形式に変換
         # 参考：KerasのFlatten()と同じような処理
-        x = x.view(x.size(0), 32 * side * side)
+        x = x.view(x.size(0), x.size(1) * x.size(2) * x.size(3))
  
         y = self.full_connection(x)
         

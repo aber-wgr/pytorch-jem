@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import net
 from torch.nn.parameter import Parameter
+from torchvision import models,transforms
+from torch.utils.data import Dataset
 import utils
 import numpy as np
+import math
 
 eta = 20
 alpha = 1.0
@@ -13,32 +16,74 @@ buffer_size = 10000
 #buffer_size = 1000
 rou = 0.05
 
+batch_size = 10
+source_channels = 1
+source_x = 28
+source_y = 28
+channels = 3
+x_size = 256
+y_size = 256
+
 B = utils.ReplayBuffer(buffer_size)
 m_uniform = torch.distributions.uniform.Uniform(torch.tensor([-1.0]), torch.tensor([1.0]))
-B.add(m_uniform.sample((100, 784)).squeeze())
+B.add(m_uniform.sample((batch_size,channels,y_size,x_size)).reshape(batch_size,channels,y_size,x_size))
+
+class CustomTensorDataset(Dataset):
+    """TensorDataset with support of transforms.
+       taken from https://stackoverflow.com/questions/55588201/pytorch-transforms-on-tensordataset
+    """
+    def __init__(self, tensors, transform=None):
+        assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
+        self.tensors = tensors
+        self.transform = transform
+
+    def __getitem__(self, index):
+        x = self.tensors[0][index]
+
+        if self.transform:
+            x = self.transform(x)
+
+        y = self.tensors[1][index]
+
+        return x, y
+
+    def __len__(self):
+        return self.tensors[0].size(0)
 
 def LogSumExp(x):
     x = torch.logsumexp(x, 1)
     x = x.view(len(x), 1)
     return x
 
-def Sample(f, batch_size, dim, device):
+def Sample(f, batch_size, c,h, w, device):
     m_uniform = torch.distributions.uniform.Uniform(torch.tensor([-1.0]), torch.tensor([1.0]))
     m_normal = torch.distributions.normal.Normal(torch.tensor([0.0]), torch.tensor([1.0]))
 
     batch_size1 = int(batch_size*(1-rou))
     batch_size2 = batch_size - batch_size1
-    x1 = torch.stack(B.get_batch(batch_size1))
-    x2 = m_uniform.sample((batch_size2, dim)).squeeze()
+    b1 = torch.stack(B.get_batch(batch_size1))
+    x1 = b1.reshape(batch_size1,c,h,w)
+    #print("x1 size:" + str(x1.size()))
+    x2 = m_uniform.sample((batch_size2,c,h,w)).reshape(batch_size2,c,h,w)
+    #print("x2 size:" + str(x2.size()))
     x = torch.cat([x1,x2],dim=0)
     x = x.to(device)
+    #print("x size" + str(x.size()))
     x.requires_grad_(True)
     for i in range(eta):
+        #print("iter " + str(i))
+        #print("pre-jac x size" + str(x.size()))
         jac = net.jacobian(f,x)
+        #print("post-jac x size" + str(x.size()))
         if torch.isnan(jac).any():
             print("jac nan")
             exit(1)
-        x = x + alpha * jac + sigma * m_normal.sample(x.shape).squeeze().to(device)
+        #print("jac size:" + str(jac.size()))
+        samp = m_normal.sample(x.shape).reshape(x.shape).to(device)
+        
+        #print("samp size:" + str(samp.size()))
+        x = x + alpha * jac + sigma * samp
+        #print("post-update x size" + str(x.size()))
     x = x.detach()
     B.add(x.cpu())
     return x
@@ -46,11 +91,13 @@ def Sample(f, batch_size, dim, device):
 def train_vanilla(loader_train, model_obj, optimizer, loss_fn, device, total_epoch, epoch):
     
     model_obj.train() # モデルを学習モードに変更
- 
+
     # ミニバッチごとに学習
     running_loss = 0
     for data, targets in loader_train:
  
+        side = int(math.sqrt(data.size(1)))
+        data = data.reshape(data.size(0),channels,y_size,x_size)
         data = data.to(device) # GPUを使用するため，to()で明示的に指定
         targets = targets.to(device) # 同上
  
@@ -77,6 +124,8 @@ def test_vanilla(loader_test, trained_model, loss_fn, device):
     with torch.no_grad(): # 推論時には勾配は不要
         for data, targets in loader_test:
  
+            side = int(math.sqrt(data.size(1)))
+            data = data.reshape(data.size(0),channels,y_size,x_size)
             data = data.to(device) #  GPUを使用するため，to()で明示的に指定
             targets = targets.to(device) # 同上
  
@@ -111,13 +160,15 @@ def train_energy(loader_train, model_obj, optimizer, loss_fn, device, total_epoc
         step += 1
         LogSumExpf = lambda x: LogSumExp(model_obj(x))
         # GPUを使用するため，to()で明示的に指定
+        side = int(math.sqrt(data.size(1)))
+        data = data.reshape(data.size(0),channels,y_size,x_size)
         data = data.to(device)
         targets = targets.to(device) # 同上
 
         optimizer.zero_grad() # 勾配を初期化
         outputs = model_obj(data) # 順伝播の計算
         loss_elf = loss_fn(outputs, targets) # 誤差を計算
-        data_sample = Sample(LogSumExpf, data.shape[0], data.shape[1], device)
+        data_sample = Sample(LogSumExpf, data.shape[0], channels,y_size,x_size, device)
         loss_gen =-(LogSumExpf(data) - LogSumExpf(data_sample)).mean()
         loss = loss_elf + loss_gen
 
@@ -139,6 +190,7 @@ def train_energy(loader_train, model_obj, optimizer, loss_fn, device, total_epoc
     train_gen_loss = running_gen_loss / len(loader_train)
     train_elf_loss = running_elf_loss / len(loader_train)
     print ('Train ELF loss %.4f, GEN loss %.4f, Total Loss: %.4f' % (train_elf_loss, train_gen_loss, train_loss))
+    #print ('Train Total Loss: %.4f' % train_loss)
  
  
 # テスト用関数
@@ -150,7 +202,8 @@ def test_energy(loader_test, trained_model, loss_fn, device):
     # ミニバッチごとに推論
     with torch.no_grad(): # 推論時には勾配は不要
         for data, targets in loader_test:
- 
+            side = int(math.sqrt(data.size(1)))
+            data = data.reshape(data.size(0),channels,y_size,x_size)
             data = data.to(device) #  GPUを使用するため，to()で明示的に指定
             targets = targets.to(device) # 同上
  
@@ -176,7 +229,6 @@ def main():
     print(device)
  
     # 2. ハイパーパラメータの設定（最低限の設定）
-    batch_size = 100
     num_classes = 10
     epochs = 20
  
@@ -196,8 +248,8 @@ def main():
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=1/7, random_state=0)
  
     # 5-2. データのフォーマットを変換：PyTorchでの形式 = [画像数，チャネル数，高さ，幅]
-    x_train = x_train.values.reshape(60000, 28 * 28)
-    x_test = x_test.values.reshape(10000, 28 *28)
+    x_train = x_train.values.reshape(60000, source_channels * source_x * source_y)
+    x_test = x_test.values.reshape(10000, source_channels * source_x * source_y)
 
     from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler(feature_range=(-1, 1))
@@ -206,6 +258,9 @@ def main():
 
     x_train = scaler.transform(x_train)
     x_test = scaler.transform(x_test)
+
+    x_train = x_train.reshape(60000, source_channels, source_x, source_y)
+    x_test = x_test.reshape(10000, source_channels, source_x, source_y)
 
     print(x_train.max(), x_train.min())
     print(x_test.max(), x_test.min())
@@ -217,23 +272,30 @@ def main():
     y_train = torch.LongTensor(y_train.to_numpy(dtype=np.float64))
     y_test = torch.LongTensor(y_test.to_numpy(dtype=np.float64))
  
+
+    xform = transforms.Compose([transforms.Lambda(lambda x: x.repeat(3,1,1)),
+                                transforms.Resize(256)])
+
     # 5-4. 入力（x）とラベル（y）を組み合わせて最終的なデータを作成
-    ds_train = TensorDataset(x_train, y_train)
-    ds_test = TensorDataset(x_test, y_test)
+    ds_train = CustomTensorDataset(tensors=(x_train, y_train),transform=xform)
+    ds_test = CustomTensorDataset(tensors=(x_test, y_test),transform=xform)
  
     # 5-5. DataLoaderを作成
     loader_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True)
     loader_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False)
  
     # 6. モデル作成
-    vanilla_model = net.CNN(num_classes=num_classes,sample_size=768).to(device)
-    energy_model = net.CNN(num_classes=num_classes,sample_size=768).to(device)
+    #vanilla_model = net.CNN(num_classes=num_classes,c=channels,h=y_size,w=x_size).to(device)
+    #energy_model = net.CNN(num_classes=num_classes,c=channels,h=y_size,w=x_size).to(device)
     #vanilla_model = net.Net(1000,10).to(device)
     #energy_model = net.Net(1000,10).to(device)
     #print(model) # ネットワークの詳細を確認用に表示
  
     # 7. 損失関数を定義
     loss_fn = nn.CrossEntropyLoss()
+
+    vanilla_model = models.vgg11().to(device)
+    energy_model = models.vgg11().to(device)
  
     # 8. 最適化手法を定義（ここでは例としてAdamを選択）
     from torch import optim
